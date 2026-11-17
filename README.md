@@ -1,4 +1,4 @@
-# ansible-backup-update
+# backup-homelab
 
 Ansible playbooks that back up chosen paths on a Linux server and update its packages, either on demand or as a weekly cron job.
 
