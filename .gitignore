@@ -1,0 +1,10 @@
+# Local inventory with real hosts (see inventory.ini.example)
+inventory.ini
+
+# Encrypted secrets
+group_vars/servers/vault.yml
+
+# Downloaded backup archives
+backups/
+
+*.retry

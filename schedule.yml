@@ -1,0 +1,41 @@
+---
+# Installs a weekly root cron job on the server that backs up the paths in
+# backup_config.yml and updates packages. Re-run after changing the config.
+- name: Schedule weekly backup and update
+  hosts: servers
+  become: true
+  vars_files:
+    - backup_config.yml
+
+  vars:
+    cron_pkg: "{{ 'cron' if ansible_facts['os_family'] == 'Debian' else 'cronie' }}"
+    cron_service: "{{ {'Debian': 'cron', 'RedHat': 'crond', 'Archlinux': 'cronie'}[ansible_facts['os_family']] }}"
+
+  tasks:
+    - name: Install cron
+      ansible.builtin.package:
+        name: "{{ cron_pkg }}"
+        state: present
+
+    - name: Enable and start cron
+      ansible.builtin.service:
+        name: "{{ cron_service }}"
+        enabled: true
+        state: started
+
+    - name: Install backup-and-update script
+      ansible.builtin.template:
+        src: templates/backup-and-update.sh.j2
+        dest: /usr/local/sbin/backup-and-update.sh
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Add weekly cron job
+      ansible.builtin.cron:
+        name: weekly backup and update
+        user: root
+        weekday: "{{ cron_weekday }}"
+        hour: "{{ cron_hour }}"
+        minute: "{{ cron_minute }}"
+        job: "/usr/local/sbin/backup-and-update.sh >> {{ cron_log }} 2>&1"

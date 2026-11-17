@@ -1,0 +1,72 @@
+---
+- name: Backup paths and update server
+  hosts: servers
+  become: true
+  vars_files:
+    - backup_config.yml
+
+  vars:
+    archive_name: "{{ inventory_hostname }}-{{ ansible_facts['date_time']['iso8601_basic_short'] }}.tar.gz"
+
+  tasks:
+    - name: Ensure remote backup directory exists
+      ansible.builtin.file:
+        path: "{{ remote_backup_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Create archive of configured paths
+      community.general.archive:
+        path: "{{ backup_paths }}"
+        dest: "{{ remote_backup_dir }}/{{ archive_name }}"
+        format: gz
+        mode: "0600"
+
+    - name: Download archive to control machine
+      ansible.builtin.fetch:
+        src: "{{ remote_backup_dir }}/{{ archive_name }}"
+        dest: "{{ local_backup_dir }}/"
+        flat: true
+
+    - name: Find old remote archives
+      ansible.builtin.find:
+        paths: "{{ remote_backup_dir }}"
+        patterns: "{{ inventory_hostname }}-*.tar.gz"
+      register: old_archives
+
+    - name: Remove archives beyond retention
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ (old_archives.files | sort(attribute='mtime', reverse=true))[remote_keep:] }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Update packages (Debian/Ubuntu)
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        autoremove: true
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Update packages (RHEL/Fedora)
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        update_only: true
+      when: ansible_facts['os_family'] == "RedHat"
+
+    - name: Update packages (Arch)
+      community.general.pacman:
+        update_cache: true
+        upgrade: true
+      when: ansible_facts['os_family'] == "Archlinux"
+
+    - name: Check if reboot is required (Debian/Ubuntu)
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_file
+
+    - name: Reboot if required
+      ansible.builtin.reboot:
+      when: reboot_if_needed and reboot_file.stat.exists

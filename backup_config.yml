@@ -1,0 +1,17 @@
+---
+# Paths on the server to include in the backup
+backup_paths:
+  - /srv/data
+
+remote_backup_dir: /var/backups/ansible
+
+local_backup_dir: ./backups
+
+remote_keep: 3
+
+reboot_if_needed: true
+
+cron_weekday: 0
+cron_hour: 3
+cron_minute: 0
+cron_log: /var/log/backup-update.log

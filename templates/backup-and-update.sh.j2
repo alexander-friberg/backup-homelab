@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# Weekly backup + package update. Rendered from backup_config.yml by schedule.yml.
+set -euo pipefail
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+BACKUP_DIR={{ remote_backup_dir | quote }}
+PREFIX={{ inventory_hostname | quote }}
+KEEP={{ remote_keep | int }}
+ARCHIVE="$BACKUP_DIR/$PREFIX-$(date +%Y%m%dT%H%M%S).tar.gz"
+
+echo "=== $(date -Is) starting backup ==="
+mkdir -p "$BACKUP_DIR"
+chmod 0700 "$BACKUP_DIR"
+
+# tar exits 1 when files change while being read (logs etc.); treat that as OK.
+umask 077
+tar czf "$ARCHIVE" --ignore-failed-read{% for p in backup_paths %} {{ p | quote }}{% endfor %} || [ $? -eq 1 ]
+echo "created $ARCHIVE"
+
+# Keep only the newest $KEEP archives
+ls -1t "$BACKUP_DIR/$PREFIX"-*.tar.gz | tail -n +$((KEEP + 1)) | xargs -r rm -f --
+
+echo "=== $(date -Is) updating packages ==="
+{% if ansible_facts['os_family'] == "Debian" %}
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get -y -o Dpkg::Options::=--force-confold dist-upgrade
+apt-get -y autoremove
+{% elif ansible_facts['os_family'] == "RedHat" %}
+dnf -y upgrade
+{% elif ansible_facts['os_family'] == "Archlinux" %}
+pacman -Syu --noconfirm
+{% else %}
+echo "unsupported OS family: {{ ansible_facts['os_family'] }}" >&2
+exit 1
+{% endif %}
+
+{% if reboot_if_needed | bool %}
+if [ -f /var/run/reboot-required ]; then
+  echo "reboot required, rebooting in 1 minute"
+  shutdown -r +1
+fi
+{% endif %}
+echo "=== $(date -Is) done ==="
